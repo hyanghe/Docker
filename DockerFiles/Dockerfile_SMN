@@ -1,0 +1,53 @@
+ARG TF_VER=20.07
+FROM nvcr.io/nvidia/tensorflow:$TF_VER-tf1-py3
+
+# Set default shell to /bin/bash
+SHELL ["/bin/bash", "-cu"]
+
+# Install TensorFlow, Keras, PyTorch and MXNet
+RUN pip install matplotlib
+RUN pip install transforms3d
+RUN pip install opencv-python
+RUN pip install future typing
+RUN pip install numpy \
+        keras \
+        h5py \
+        numpy-stl \
+        sympy==1.5.1
+RUN pip install -U https://github.com/paulo-herrera/PyEVTK/archive/v1.2.1.tar.gz
+
+RUN pip install scikit-learn
+
+# Setup git lfs
+RUN apt-get update && apt-get install -y git-lfs && \
+    git lfs install
+
+# Copy files into container and install the package
+COPY . /simnet/
+
+# Extract OptiX 7.0.0 SDK and CMake 3.18.2
+RUN cd /simnet && ./NVIDIA-OptiX-SDK-7.0.0-linux64.sh --skip-license --include-subdir --prefix=/root
+RUN cd /root && \
+    wget https://github.com/Kitware/CMake/releases/download/v3.18.2/cmake-3.18.2-Linux-x86_64.tar.gz && \
+    tar xvfz cmake-3.18.2-Linux-x86_64.tar.gz
+
+# Build libsdf.so
+RUN mkdir /simnet/external/pysdf/build && \
+    cd /simnet/external/pysdf/build && \
+    /root/cmake-3.18.2-Linux-x86_64/bin/cmake .. -DOPTIX_HOME=/root/NVIDIA-OptiX-SDK-7.0.0-linux64 && \
+    make && \
+    mkdir /simnet/external/lib && \
+    cp libsdf.so /simnet/external/lib/
+ENV LD_LIBRARY_PATH="/simnet/external/lib:${LD_LIBRARY_PATH}"
+
+# Install pysdf
+RUN cd /simnet/external/pysdf && python setup.py install
+
+# Install simnet
+RUN cd /simnet && python setup.py install
+
+# Cleanup
+RUN rm -rf /root/NVIDIA-OptiX-SDK-7.0.0-linux64 /root/cmake-3.18.2-Linux-x86_64 /simnet/external/pysdf
+
+RUN cd /simnet/ && python setup.py install
+WORKDIR /examples
